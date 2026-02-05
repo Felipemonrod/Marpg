@@ -1,0 +1,19 @@
+{
+  "maps": [
+    {
+      "id": "example",
+      "name": "Exemplo (coloque uma imagem aqui)",
+      "file": "example-map.png"
+    },
+    {
+      "id": "Tigen",
+      "name": "Tigen",
+      "file": "image.png"
+    },
+    {
+      "id": "world-map",
+      "name": "World Map",
+      "file": "World_map.webp"
+    }
+  ]
+}

@@ -1,0 +1,135 @@
+.app {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.menu {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  background: rgba(0, 0, 0, 0.06);
+  border-bottom: 1px solid rgba(127, 127, 127, 0.2);
+  font-size: 12px;
+}
+
+.menu-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.menu-title {
+  font-weight: 600;
+}
+
+.menu-item {
+  opacity: 0.85;
+  cursor: default;
+}
+
+.menu-right {
+  opacity: 0.7;
+}
+
+.map {
+  height: 100%;
+  width: 100%;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(127, 127, 127, 0.2);
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.toolbar-left {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.title {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.hint {
+  font-size: 12px;
+  opacity: 0.75;
+}
+
+.fileLabel {
+  border-radius: 8px;
+  border: 1px solid rgba(127, 127, 127, 0.3);
+  padding: 6px 10px;
+  font-size: 12px;
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.6);
+}
+
+.fileInput {
+  display: none;
+}
+
+.btn {
+  border-radius: 8px;
+  border: 1px solid rgba(127, 127, 127, 0.3);
+  padding: 6px 10px;
+  font-size: 12px;
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.6);
+}
+
+.status {
+  padding: 8px 12px;
+  font-size: 12px;
+  border-bottom: 1px solid rgba(127, 127, 127, 0.2);
+}
+
+.controls {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 8px 12px;
+  border-bottom: 1px solid rgba(127, 127, 127, 0.15);
+  background: rgba(0, 0, 0, 0.02);
+}
+
+.controlGroup {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.controlLabel {
+  font-size: 12px;
+  opacity: 0.8;
+}
+
+.controlInput,
+.controlSelect {
+  border-radius: 6px;
+  border: 1px solid rgba(127, 127, 127, 0.3);
+  padding: 4px 8px;
+  font-size: 12px;
+  background: rgba(255, 255, 255, 0.8);
+}
+
+.note {
+  padding: 6px 12px;
+  font-size: 12px;
+  opacity: 0.7;
+  border-bottom: 1px solid rgba(127, 127, 127, 0.15);
+}
