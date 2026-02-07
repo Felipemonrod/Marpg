@@ -1,73 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import L from 'leaflet'
 import './App.css'
-
-type ProjectFile = {
-  version: 1
-  image: {
-    name: string
-    type: string
-    width: number
-    height: number
-    dataUrl: string
-  }
-}
-
-class ImageTileLayer extends L.GridLayer {
-  private image: HTMLImageElement
-  private imageWidth: number
-  private imageHeight: number
-  private smoothingQuality: ImageSmoothingQuality
-
-  constructor(
-    image: HTMLImageElement,
-    width: number,
-    height: number,
-    smoothingQuality: ImageSmoothingQuality,
-    options?: L.GridLayerOptions,
-  ) {
-    super(options)
-    this.image = image
-    this.imageWidth = width
-    this.imageHeight = height
-    this.smoothingQuality = smoothingQuality
-  }
-
-  createTile(coords: L.Coords): HTMLElement {
-    const tile = document.createElement('canvas')
-    const size = this.getTileSize()
-    tile.width = size.x
-    tile.height = size.y
-
-    const ctx = tile.getContext('2d')
-    if (!ctx) return tile
-
-    const bounds = (
-      this as unknown as L.GridLayer & { _tileCoordsToBounds: (c: L.Coords) => L.LatLngBounds }
-    )._tileCoordsToBounds(coords)
-    const nw = bounds.getNorthWest()
-    const se = bounds.getSouthEast()
-
-    const srcX = Math.max(0, nw.lng)
-    const srcY = Math.max(0, nw.lat)
-    const srcW = Math.min(this.imageWidth, se.lng) - srcX
-    const srcH = Math.min(this.imageHeight, se.lat) - srcY
-
-    if (srcW <= 0 || srcH <= 0) return tile
-
-    const destX = ((srcX - nw.lng) / (se.lng - nw.lng)) * size.x
-    const destY = ((srcY - nw.lat) / (se.lat - nw.lat)) * size.y
-    const destW = (srcW / (se.lng - nw.lng)) * size.x
-    const destH = (srcH / (se.lat - nw.lat)) * size.y
-
-    ctx.imageSmoothingEnabled = true
-    ctx.imageSmoothingQuality = this.smoothingQuality
-    ctx.clearRect(0, 0, size.x, size.y)
-    ctx.drawImage(this.image, srcX, srcY, srcW, srcH, destX, destY, destW, destH)
-
-    return tile
-  }
-}
+import ImageTileLayer from './map/ImageTileLayer'
+import MenuBar from './components/MenuBar'
+import Sidebar from './components/Sidebar'
+import type { ImageMeta, ProjectFile, Quality, ZoomSettings } from './types'
+import { extractSvgTextFromDataUrl, parseSvgDimensions } from './utils/svg'
+import { buildProjectDataUrl } from './utils/projectDataUrl'
 
 function App() {
   const mapDivRef = useRef<HTMLDivElement | null>(null)
@@ -76,11 +15,18 @@ function App() {
   const imageRef = useRef<{ image: HTMLImageElement; width: number; height: number } | null>(null)
   const [mapLabel, setMapLabel] = useState<string>('Nenhuma imagem carregada')
   const [notice, setNotice] = useState<string>('')
-  const [zoomSettings, setZoomSettings] = useState<{ minZoom: number; maxZoom: number }>({
+  const [zoomSettings, setZoomSettings] = useState<ZoomSettings>({
     minZoom: -5,
     maxZoom: 6,
   })
-  const [quality, setQuality] = useState<'low' | 'medium' | 'high' | 'ultra'>('high')
+  const [quality, setQuality] = useState<Quality>('high')
+  const [imageMeta, setImageMeta] = useState<ImageMeta | null>(null)
+  const [sidebarOpen, setSidebarOpen] = useState<boolean>(true)
+
+  const cacheKeys = {
+    project: 'rpg_map_project_v1',
+    fixedImage: 'rpg_map_fixed_image_v1',
+  }
 
   useEffect(() => {
     if (!mapDivRef.current) return
@@ -92,6 +38,8 @@ function App() {
       attributionControl: false,
       minZoom: -5,
     })
+
+    map.setView([0, 0], 0)
 
     const pm = (map as L.Map & { pm?: { addControls: (options: Record<string, boolean>) => void } }).pm
     pm?.addControls({
@@ -115,6 +63,30 @@ function App() {
       map.remove()
       leafletMapRef.current = null
     }
+  }, [])
+
+  useEffect(() => {
+    const cachedProject = localStorage.getItem(cacheKeys.project)
+    if (!cachedProject) return
+
+    try {
+      const data = JSON.parse(cachedProject) as ProjectFile
+      if (!data?.image?.dataUrl) return
+      const img = new Image()
+      img.onload = () => {
+        setZoomSettings(data.zoom)
+        setQuality(data.quality)
+        const svgText = extractSvgTextFromDataUrl(data.image.dataUrl)
+        setImageMeta({ name: data.image.name, type: data.image.type, svgText: svgText ?? undefined })
+        mountImageLayer(img, data.image.width, data.image.height)
+        setMapLabel(`${data.image.name} • ${data.image.width}x${data.image.height}`)
+        setNotice('Projeto carregado do armazenamento local.')
+      }
+      img.src = data.image.dataUrl
+    } catch {
+      // ignore cache errors
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   useEffect(() => {
@@ -172,8 +144,7 @@ function App() {
       tileLayerRef.current = null
     }
 
-    const bounds = L.latLngBounds([0, 0], [height, width])
-    map.setMaxBounds(bounds)
+    const bounds = L.latLngBounds([0, 0], [-height, width])
 
     map.setMinZoom(zoomSettings.minZoom)
     map.setMaxZoom(zoomSettings.maxZoom)
@@ -191,12 +162,33 @@ function App() {
       minZoom: zoomSettings.minZoom,
       maxZoom: zoomSettings.maxZoom,
       noWrap: true,
+      keepBuffer: 0,
+      updateWhenIdle: true,
+      updateInterval: 200,
     })
 
     tileLayer.addTo(map)
-    map.fitBounds(bounds)
+    map.fitBounds(bounds, { animate: false })
+    map.invalidateSize()
     tileLayerRef.current = tileLayer
     imageRef.current = { image, width, height }
+  }
+
+  const clearImageLayer = () => {
+    const map = leafletMapRef.current
+    if (tileLayerRef.current) {
+      tileLayerRef.current.remove()
+      tileLayerRef.current = null
+    }
+    imageRef.current = null
+    setImageMeta(null)
+    setMapLabel('Nenhuma imagem carregada')
+    setNotice('Imagem removida.')
+
+    if (map) {
+      map.setView([0, 0], 0)
+      map.invalidateSize()
+    }
   }
 
   useEffect(() => {
@@ -205,18 +197,89 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [zoomSettings, quality])
 
+  const getProjectDataUrl = async () => {
+    if (!imageRef.current || !imageMeta) return null
+    return buildProjectDataUrl({
+      image: imageRef.current.image,
+      width: imageRef.current.width,
+      height: imageRef.current.height,
+      imageMeta,
+    })
+  }
+
   const handleImageFile = async (file: File | null) => {
     if (!file) return
     const url = URL.createObjectURL(file)
     const img = new Image()
     img.onload = () => {
-      mountImageLayer(img, img.naturalWidth, img.naturalHeight)
-      setMapLabel(`${file.name} • ${img.naturalWidth}x${img.naturalHeight}`)
+      const width = img.naturalWidth || img.width
+      const height = img.naturalHeight || img.height
+      if (width && height) {
+        mountImageLayer(img, width, height)
+        setMapLabel(`${file.name} • ${width}x${height}`)
+        setImageMeta({ name: file.name, type: file.type })
+      }
       setNotice('Imagem carregada com tiles de alta qualidade.')
+      URL.revokeObjectURL(url)
     }
     img.onerror = () => {
       setNotice('Falha ao carregar a imagem.')
+      URL.revokeObjectURL(url)
     }
+
+    if (file.type === 'image/svg+xml' || file.name.toLowerCase().endsWith('.svg')) {
+      const svgText = await file.text()
+      const dims = parseSvgDimensions(svgText)
+      if (dims) {
+        setZoomSettings((prev) => ({ ...prev, maxZoom: Math.max(prev.maxZoom, 10) }))
+        img.onload = () => {
+          mountImageLayer(img, dims.width, dims.height)
+          setMapLabel(`${file.name} • ${dims.width}x${dims.height}`)
+          setNotice('SVG carregado com alta definição.')
+          setImageMeta({ name: file.name, type: file.type, svgText })
+          URL.revokeObjectURL(url)
+        }
+      }
+    }
+
+    img.src = url
+  }
+
+  const handleFixedImageFile = async (file: File | null) => {
+    if (!file) return
+    const url = URL.createObjectURL(file)
+    const img = new Image()
+    img.onload = () => {
+      const width = img.naturalWidth || img.width
+      const height = img.naturalHeight || img.height
+      if (width && height) {
+        mountImageLayer(img, width, height)
+        setMapLabel(`${file.name} • ${width}x${height}`)
+        setImageMeta({ name: file.name, type: file.type })
+      }
+      setNotice('Imagem fixa carregada.')
+      URL.revokeObjectURL(url)
+    }
+    img.onerror = () => {
+      setNotice('Falha ao carregar a imagem fixa.')
+      URL.revokeObjectURL(url)
+    }
+
+    if (file.type === 'image/svg+xml' || file.name.toLowerCase().endsWith('.svg')) {
+      const svgText = await file.text()
+      const dims = parseSvgDimensions(svgText)
+      if (dims) {
+        setZoomSettings((prev) => ({ ...prev, maxZoom: Math.max(prev.maxZoom, 10) }))
+        img.onload = () => {
+          mountImageLayer(img, dims.width, dims.height)
+          setMapLabel(`${file.name} • ${dims.width}x${dims.height}`)
+          setNotice('SVG carregado com alta definição.')
+          setImageMeta({ name: file.name, type: file.type, svgText })
+          URL.revokeObjectURL(url)
+        }
+      }
+    }
+
     img.src = url
   }
 
@@ -234,6 +297,10 @@ function App() {
       img.onload = () => {
         mountImageLayer(img, data.image.width, data.image.height)
         setMapLabel(`${data.image.name} • ${data.image.width}x${data.image.height}`)
+        setZoomSettings(data.zoom)
+        setQuality(data.quality)
+        const svgText = extractSvgTextFromDataUrl(data.image.dataUrl)
+        setImageMeta({ name: data.image.name, type: data.image.type, svgText: svgText ?? undefined })
         setNotice('Projeto carregado.')
       }
       img.onerror = () => setNotice('Falha ao carregar a imagem do projeto.')
@@ -243,33 +310,55 @@ function App() {
     }
   }
 
-  const handleZoomImport = async (file: File | null) => {
-    if (!file) return
+  const loadProjectFromLocal = () => {
+    const raw = localStorage.getItem(cacheKeys.project)
+    if (!raw) {
+      setNotice('Nenhum projeto salvo localmente.')
+      return
+    }
     try {
-      const text = await file.text()
-      const data = JSON.parse(text) as {
-        version?: number
-        zoom?: { minZoom?: number; maxZoom?: number }
-        quality?: 'low' | 'medium' | 'high' | 'ultra'
-      }
-      if (!data?.zoom) {
-        setNotice('Arquivo de zoom inválido.')
+      const data = JSON.parse(raw) as ProjectFile
+      if (!data?.image?.dataUrl) {
+        setNotice('Projeto local inválido.')
         return
       }
-
-      const nextMin = typeof data.zoom.minZoom === 'number' ? data.zoom.minZoom : zoomSettings.minZoom
-      const nextMax = typeof data.zoom.maxZoom === 'number' ? data.zoom.maxZoom : zoomSettings.maxZoom
-      setZoomSettings({ minZoom: Math.min(nextMin, nextMax), maxZoom: Math.max(nextMin, nextMax) })
-      if (data.quality) setQuality(data.quality)
-      setNotice('Ajustes de zoom importados.')
+      const img = new Image()
+      img.onload = () => {
+        setZoomSettings(data.zoom)
+        setQuality(data.quality)
+        const svgText = extractSvgTextFromDataUrl(data.image.dataUrl)
+        setImageMeta({ name: data.image.name, type: data.image.type, svgText: svgText ?? undefined })
+        mountImageLayer(img, data.image.width, data.image.height)
+        setMapLabel(`${data.image.name} • ${data.image.width}x${data.image.height}`)
+        setNotice('Projeto carregado do armazenamento local.')
+      }
+      img.src = data.image.dataUrl
     } catch {
-      setNotice('Arquivo de zoom inválido.')
+      setNotice('Projeto local inválido.')
     }
   }
 
-  const handleZoomExport = () => {
-    const payload = {
+  const exportProject = async () => {
+    if (!imageMeta || !imageRef.current) {
+      setNotice('Nenhuma imagem para exportar o projeto.')
+      return
+    }
+
+    const dataUrl = await getProjectDataUrl()
+    if (!dataUrl) {
+      setNotice('Falha ao preparar a imagem do projeto.')
+      return
+    }
+
+    const payload: ProjectFile = {
       version: 1,
+      image: {
+        name: imageMeta.name,
+        type: imageMeta.type,
+        width: imageRef.current.width,
+        height: imageRef.current.height,
+        dataUrl,
+      },
       zoom: {
         minZoom: zoomSettings.minZoom,
         maxZoom: zoomSettings.maxZoom,
@@ -281,114 +370,161 @@ function App() {
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = 'zoom-settings.json'
+    a.download = 'rpg-map-project.json'
     a.click()
     URL.revokeObjectURL(url)
   }
 
+  const exportFixedImage = () => {
+    if (!imageRef.current) {
+      setNotice('Nenhuma imagem para exportar.')
+      return
+    }
+
+    const canvas = document.createElement('canvas')
+    canvas.width = imageRef.current.width
+    canvas.height = imageRef.current.height
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+    ctx.imageSmoothingEnabled = true
+    ctx.imageSmoothingQuality = 'high'
+    ctx.drawImage(imageRef.current.image, 0, 0)
+
+    const url = canvas.toDataURL('image/png')
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'rpg-map-fixed.png'
+    a.click()
+  }
+
+  const exportAutomatic = () => {
+    if (!imageRef.current) {
+      setNotice('Nenhuma imagem para exportar.')
+      return
+    }
+    exportFixedImage()
+    window.setTimeout(() => void exportProject(), 300)
+    setNotice('Exportação automática iniciada (imagem fixa + projeto).')
+  }
+
+  const saveProjectToCache = async () => {
+    if (!imageMeta || !imageRef.current) {
+      setNotice('Nenhuma imagem para salvar no cache.')
+      return
+    }
+
+    const dataUrl = await getProjectDataUrl()
+    if (!dataUrl) {
+      setNotice('Falha ao preparar o projeto local.')
+      return
+    }
+
+    const payload: ProjectFile = {
+      version: 1,
+      image: {
+        name: imageMeta.name,
+        type: imageMeta.type,
+        width: imageRef.current.width,
+        height: imageRef.current.height,
+        dataUrl,
+      },
+      zoom: {
+        minZoom: zoomSettings.minZoom,
+        maxZoom: zoomSettings.maxZoom,
+      },
+      quality,
+    }
+
+    localStorage.setItem(cacheKeys.project, JSON.stringify(payload))
+    setNotice('Projeto salvo localmente.')
+  }
+
+  const saveFixedImageToCache = () => {
+    if (!imageRef.current) {
+      setNotice('Nenhuma imagem para salvar no cache.')
+      return
+    }
+
+    const canvas = document.createElement('canvas')
+    canvas.width = imageRef.current.width
+    canvas.height = imageRef.current.height
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+    ctx.imageSmoothingEnabled = true
+    ctx.imageSmoothingQuality = 'high'
+    ctx.drawImage(imageRef.current.image, 0, 0)
+    const dataUrl = canvas.toDataURL('image/png')
+
+    localStorage.setItem(cacheKeys.fixedImage, JSON.stringify({
+      version: 1,
+      name: imageMeta?.name ?? 'mapa.png',
+      dataUrl,
+    }))
+    setNotice('Imagem fixa salva localmente.')
+  }
+
+  const loadFixedImageFromCache = () => {
+    const raw = localStorage.getItem(cacheKeys.fixedImage)
+    if (!raw) {
+      setNotice('Nenhuma imagem fixa salva localmente.')
+      return
+    }
+    try {
+      const data = JSON.parse(raw) as { dataUrl: string; name?: string }
+      if (!data?.dataUrl) {
+        setNotice('Imagem fixa local inválida.')
+        return
+      }
+      const img = new Image()
+      img.onload = () => {
+        mountImageLayer(img, img.naturalWidth, img.naturalHeight)
+        setMapLabel(`${data.name ?? 'cache'} • ${img.naturalWidth}x${img.naturalHeight}`)
+        setNotice('Imagem fixa carregada do armazenamento local.')
+      }
+      img.src = data.dataUrl
+    } catch {
+      setNotice('Imagem fixa local inválida.')
+    }
+  }
+
   return (
     <div className="app">
-      <div className="menu">
-        <div className="menu-left">
-          <span className="menu-title">RPG Map Studio</span>
-          <span className="menu-item">Arquivo</span>
-          <span className="menu-item">Editar</span>
-          <span className="menu-item">Exibir</span>
+      <MenuBar />
+      <div className={`main ${sidebarOpen ? 'sidebarOpen' : 'sidebarClosed'}`}>
+        <div className="mapArea">
+          <div ref={mapDivRef} className="map" />
         </div>
-        <div className="menu-right">
-          <span className="menu-hint">Dica: Ctrl+V para colar imagem</span>
-        </div>
+
+        <button
+          className="panelHandle"
+          type="button"
+          onClick={() => setSidebarOpen((v) => !v)}
+          aria-label={sidebarOpen ? 'Fechar painel' : 'Abrir painel'}
+          title={sidebarOpen ? 'Fechar painel' : 'Abrir painel'}
+        >
+          {sidebarOpen ? '>' : '<'}
+        </button>
+
+        <Sidebar
+          mapLabel={mapLabel}
+          notice={notice}
+          zoomSettings={zoomSettings}
+          quality={quality}
+          onImageFile={(file) => void handleImageFile(file)}
+          onFixedImageFile={(file) => void handleFixedImageFile(file)}
+          onProjectFile={(file) => void handleProjectFile(file)}
+          onClearImage={clearImageLayer}
+          onExportFixed={exportFixedImage}
+          onExportProject={() => void exportProject()}
+          onExportAutomatic={exportAutomatic}
+          onSaveFixedLocal={saveFixedImageToCache}
+          onSaveProjectLocal={() => void saveProjectToCache()}
+          onLoadProjectLocal={loadProjectFromLocal}
+          onLoadFixedLocal={loadFixedImageFromCache}
+          onZoomChange={setZoomSettings}
+          onQualityChange={setQuality}
+        />
       </div>
-      <div className="toolbar">
-        <div className="toolbar-left">
-          <div className="title">Tile System (alta qualidade)</div>
-          <div className="hint">{mapLabel}</div>
-        </div>
-        <div className="toolbar-right">
-          <label className="fileLabel">
-            Importar imagem
-            <input
-              className="fileInput"
-              type="file"
-              accept="image/*"
-              onChange={(e) => void handleImageFile(e.target.files?.[0] ?? null)}
-            />
-          </label>
-          <label className="fileLabel">
-            Importar projeto
-            <input
-              className="fileInput"
-              type="file"
-              accept="application/json"
-              onChange={(e) => void handleProjectFile(e.target.files?.[0] ?? null)}
-            />
-          </label>
-          <label className="fileLabel">
-            Importar zoom
-            <input
-              className="fileInput"
-              type="file"
-              accept="application/json"
-              onChange={(e) => void handleZoomImport(e.target.files?.[0] ?? null)}
-            />
-          </label>
-          <button className="btn" type="button" onClick={handleZoomExport}>
-            Exportar zoom
-          </button>
-        </div>
-      </div>
-      <div className="controls">
-        <div className="controlGroup">
-          <label className="controlLabel">Min zoom</label>
-          <input
-            className="controlInput"
-            type="number"
-            step={1}
-            value={zoomSettings.minZoom}
-            onChange={(e) => {
-              const value = Number(e.target.value)
-              setZoomSettings((prev) => ({
-                minZoom: Math.min(value, prev.maxZoom),
-                maxZoom: prev.maxZoom,
-              }))
-            }}
-          />
-        </div>
-        <div className="controlGroup">
-          <label className="controlLabel">Max zoom</label>
-          <input
-            className="controlInput"
-            type="number"
-            step={1}
-            value={zoomSettings.maxZoom}
-            onChange={(e) => {
-              const value = Number(e.target.value)
-              setZoomSettings((prev) => ({
-                minZoom: prev.minZoom,
-                maxZoom: Math.max(value, prev.minZoom),
-              }))
-            }}
-          />
-        </div>
-        <div className="controlGroup">
-          <label className="controlLabel">Qualidade</label>
-          <select
-            className="controlSelect"
-            value={quality}
-            onChange={(e) => setQuality(e.target.value as 'low' | 'medium' | 'high' | 'ultra')}
-          >
-            <option value="low">Baixa (mais leve)</option>
-            <option value="medium">Média</option>
-            <option value="high">Alta</option>
-            <option value="ultra">Ultra (mais pesada)</option>
-          </select>
-        </div>
-      </div>
-      <div className="note">
-        Lembrete: qualidade mais alta gera tiles mais pesados. Exporte os ajustes de zoom/qualidade para reutilizar.
-      </div>
-      {notice ? <div className="status">{notice}</div> : null}
-      <div ref={mapDivRef} className="map" />
     </div>
   )
 }
