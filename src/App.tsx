@@ -1,18 +1,14 @@
-import { useEffect, useRef, useState } from 'react'
-import L from 'leaflet'
+import { useEffect, useState } from 'react'
 import './App.css'
-import ImageTileLayer from './map/ImageTileLayer'
 import MenuBar from './components/MenuBar'
 import Sidebar from './components/Sidebar'
 import type { ImageMeta, ProjectFile, Quality, ZoomSettings } from './types'
 import { extractSvgTextFromDataUrl, parseSvgDimensions } from './utils/svg'
 import { buildProjectDataUrl } from './utils/projectDataUrl'
+import useLeafletMap from './hooks/useLeafletMap'
+import useImageLayer from './hooks/useImageLayer'
 
 function App() {
-  const mapDivRef = useRef<HTMLDivElement | null>(null)
-  const leafletMapRef = useRef<L.Map | null>(null)
-  const tileLayerRef = useRef<L.Layer | null>(null)
-  const imageRef = useRef<{ image: HTMLImageElement; width: number; height: number } | null>(null)
   const [mapLabel, setMapLabel] = useState<string>('Nenhuma imagem carregada')
   const [notice, setNotice] = useState<string>('')
   const [zoomSettings, setZoomSettings] = useState<ZoomSettings>({
@@ -23,47 +19,17 @@ function App() {
   const [imageMeta, setImageMeta] = useState<ImageMeta | null>(null)
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(true)
 
+  const { mapDivRef, mapRef } = useLeafletMap({ minZoom: -5 })
+  const { imageRef, mountImageLayer, clearImageLayer: clearMapImage } = useImageLayer({
+    mapRef,
+    zoomSettings,
+    quality,
+  })
+
   const cacheKeys = {
     project: 'rpg_map_project_v1',
     fixedImage: 'rpg_map_fixed_image_v1',
   }
-
-  useEffect(() => {
-    if (!mapDivRef.current) return
-    if (leafletMapRef.current) return
-
-    const map = L.map(mapDivRef.current, {
-      crs: L.CRS.Simple,
-      zoomControl: true,
-      attributionControl: false,
-      minZoom: -5,
-    })
-
-    map.setView([0, 0], 0)
-
-    const pm = (map as L.Map & { pm?: { addControls: (options: Record<string, boolean>) => void } }).pm
-    pm?.addControls({
-      position: 'topleft',
-      drawMarker: true,
-      drawPolyline: true,
-      drawRectangle: true,
-      drawPolygon: true,
-      drawCircle: false,
-      drawCircleMarker: false,
-      drawText: false,
-      editMode: true,
-      dragMode: true,
-      cutPolygon: false,
-      removalMode: true,
-    })
-
-    leafletMapRef.current = map
-
-    return () => {
-      map.remove()
-      leafletMapRef.current = null
-    }
-  }, [])
 
   useEffect(() => {
     const cachedProject = localStorage.getItem(cacheKeys.project)
@@ -135,67 +101,12 @@ function App() {
     }
   }, [])
 
-  const mountImageLayer = (image: HTMLImageElement, width: number, height: number) => {
-    const map = leafletMapRef.current
-    if (!map) return
-
-    if (tileLayerRef.current) {
-      tileLayerRef.current.remove()
-      tileLayerRef.current = null
-    }
-
-    const bounds = L.latLngBounds([0, 0], [-height, width])
-
-    map.setMinZoom(zoomSettings.minZoom)
-    map.setMaxZoom(zoomSettings.maxZoom)
-
-    const qualityConfig = {
-      low: { tileSize: 128, smoothing: 'low' as ImageSmoothingQuality },
-      medium: { tileSize: 256, smoothing: 'medium' as ImageSmoothingQuality },
-      high: { tileSize: 256, smoothing: 'high' as ImageSmoothingQuality },
-      ultra: { tileSize: 512, smoothing: 'high' as ImageSmoothingQuality },
-    }[quality]
-
-    const tileLayer = new ImageTileLayer(image, width, height, qualityConfig.smoothing, {
-      tileSize: qualityConfig.tileSize,
-      bounds,
-      minZoom: zoomSettings.minZoom,
-      maxZoom: zoomSettings.maxZoom,
-      noWrap: true,
-      keepBuffer: 0,
-      updateWhenIdle: true,
-      updateInterval: 200,
-    })
-
-    tileLayer.addTo(map)
-    map.fitBounds(bounds, { animate: false })
-    map.invalidateSize()
-    tileLayerRef.current = tileLayer
-    imageRef.current = { image, width, height }
-  }
-
   const clearImageLayer = () => {
-    const map = leafletMapRef.current
-    if (tileLayerRef.current) {
-      tileLayerRef.current.remove()
-      tileLayerRef.current = null
-    }
-    imageRef.current = null
+    clearMapImage()
     setImageMeta(null)
     setMapLabel('Nenhuma imagem carregada')
     setNotice('Imagem removida.')
-
-    if (map) {
-      map.setView([0, 0], 0)
-      map.invalidateSize()
-    }
   }
-
-  useEffect(() => {
-    if (!imageRef.current) return
-    mountImageLayer(imageRef.current.image, imageRef.current.width, imageRef.current.height)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [zoomSettings, quality])
 
   const getProjectDataUrl = async () => {
     if (!imageRef.current || !imageMeta) return null
