@@ -1,10 +1,11 @@
-import type { Quality, ZoomSettings } from '../types'
+import type { Quality, ZoomSettings, RenderingMode } from '../types'
 
 type SidebarProps = {
   mapLabel: string
   notice: string
   zoomSettings: ZoomSettings
   quality: Quality
+  renderingMode: RenderingMode
   onImageFile: (file: File | null) => void
   onFixedImageFile: (file: File | null) => void
   onProjectFile: (file: File | null) => void
@@ -18,6 +19,7 @@ type SidebarProps = {
   onLoadFixedLocal: () => void
   onZoomChange: (next: ZoomSettings) => void
   onQualityChange: (next: Quality) => void
+  onRenderingModeChange: (next: RenderingMode) => void
 }
 
 const Sidebar = ({
@@ -25,6 +27,7 @@ const Sidebar = ({
   notice,
   zoomSettings,
   quality,
+  renderingMode,
   onImageFile,
   onFixedImageFile,
   onProjectFile,
@@ -38,6 +41,7 @@ const Sidebar = ({
   onLoadFixedLocal,
   onZoomChange,
   onQualityChange,
+  onRenderingModeChange,
 }: SidebarProps) => {
   return (
     <aside className="sidebar">
@@ -150,9 +154,21 @@ const Sidebar = ({
             <option value="ultra">Ultra (mais pesada)</option>
           </select>
         </div>
+        <div className="controlGroup">
+          <label className="controlLabel">Modo de renderização</label>
+          <select
+            className="controlSelect"
+            value={renderingMode}
+            onChange={(e) => onRenderingModeChange(e.target.value as RenderingMode)}
+          >
+            <option value="auto">Auto (vetorial para SVG)</option>
+            <option value="vector">Vetorial (somente SVG)</option>
+            <option value="raster">Raster (multi-resolução)</option>
+          </select>
+        </div>
       </div>
 
-      <div className="note">Lembrete: qualidade mais alta gera tiles mais pesados.</div>
+      <div className="note">Lembrete: qualidade mais alta gera tiles mais pesados. Modo vetorial oferece zoom infinito para SVG.</div>
       {notice ? <div className="status">{notice}</div> : null}
     </aside>
   )

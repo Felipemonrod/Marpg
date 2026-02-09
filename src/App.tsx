@@ -2,9 +2,10 @@ import { useEffect, useState } from 'react'
 import './App.css'
 import MenuBar from './components/MenuBar'
 import Sidebar from './components/Sidebar'
-import type { ImageMeta, ProjectFile, Quality, ZoomSettings } from './types'
+import type { ImageMeta, ProjectFile, Quality, ZoomSettings, RenderingMode } from './types'
 import { extractSvgTextFromDataUrl, parseSvgDimensions } from './utils/svg'
 import { buildProjectDataUrl } from './utils/projectDataUrl'
+import { generateSvgPyramid, generateRasterPyramid, type ResolutionPyramid } from './utils/multiResolutionImage'
 import useLeafletMap from './hooks/useLeafletMap'
 import useImageLayer from './hooks/useImageLayer'
 
@@ -16,14 +17,19 @@ function App() {
     maxZoom: 6,
   })
   const [quality, setQuality] = useState<Quality>('high')
+  const [renderingMode, setRenderingMode] = useState<RenderingMode>('auto')
   const [imageMeta, setImageMeta] = useState<ImageMeta | null>(null)
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(true)
+  const [resolutionPyramid, setResolutionPyramid] = useState<ResolutionPyramid | undefined>(undefined)
 
   const { mapDivRef, mapRef } = useLeafletMap({ minZoom: -5 })
   const { imageRef, mountImageLayer, clearImageLayer: clearMapImage } = useImageLayer({
     mapRef,
     zoomSettings,
     quality,
+    renderingMode,
+    svgText: imageMeta?.svgText,
+    resolutionPyramid,
   })
 
   const cacheKeys = {
@@ -39,11 +45,25 @@ function App() {
       const data = JSON.parse(cachedProject) as ProjectFile
       if (!data?.image?.dataUrl) return
       const img = new Image()
-      img.onload = () => {
+      img.onload = async () => {
         setZoomSettings(data.zoom)
         setQuality(data.quality)
+        if (data.renderingMode) {
+          setRenderingMode(data.renderingMode)
+        }
+        
         const svgText = extractSvgTextFromDataUrl(data.image.dataUrl)
         setImageMeta({ name: data.image.name, type: data.image.type, svgText: svgText ?? undefined })
+        
+        // Regenerate resolution pyramid
+        if (svgText) {
+          const pyramid = await generateSvgPyramid(svgText, data.image.width, data.image.height, [1, 2, 4, 8])
+          setResolutionPyramid(pyramid)
+        } else {
+          const pyramid = await generateRasterPyramid(img, [1, 2, 4])
+          setResolutionPyramid(pyramid)
+        }
+        
         mountImageLayer(img, data.image.width, data.image.height)
         setMapLabel(`${data.image.name} • ${data.image.width}x${data.image.height}`)
         setNotice('Projeto carregado do armazenamento local.')
@@ -104,6 +124,7 @@ function App() {
   const clearImageLayer = () => {
     clearMapImage()
     setImageMeta(null)
+    setResolutionPyramid(undefined)
     setMapLabel('Nenhuma imagem carregada')
     setNotice('Imagem removida.')
   }
@@ -122,35 +143,53 @@ function App() {
     if (!file) return
     const url = URL.createObjectURL(file)
     const img = new Image()
-    img.onload = () => {
+    
+    const isSvg = file.type === 'image/svg+xml' || file.name.toLowerCase().endsWith('.svg')
+    let svgText: string | undefined
+
+    if (isSvg) {
+      svgText = await file.text()
+      const dims = parseSvgDimensions(svgText)
+      if (dims) {
+        // For SVG, increase max zoom to allow more detail
+        setZoomSettings((prev) => ({ ...prev, maxZoom: Math.max(prev.maxZoom, 12) }))
+        
+        img.onload = async () => {
+          // Generate resolution pyramid for SVG
+          const pyramid = await generateSvgPyramid(svgText!, dims.width, dims.height, [1, 2, 4, 8])
+          setResolutionPyramid(pyramid)
+          
+          mountImageLayer(img, dims.width, dims.height)
+          setMapLabel(`${file.name} • ${dims.width}x${dims.height} (Multi-Res)`)
+          setNotice('SVG carregado com multi-resolução e suporte vetorial.')
+          setImageMeta({ name: file.name, type: file.type, svgText })
+          URL.revokeObjectURL(url)
+        }
+        
+        img.src = url
+        return
+      }
+    }
+
+    // Handle raster images
+    img.onload = async () => {
       const width = img.naturalWidth || img.width
       const height = img.naturalHeight || img.height
       if (width && height) {
+        // Generate resolution pyramid for raster images
+        const pyramid = await generateRasterPyramid(img, [1, 2, 4])
+        setResolutionPyramid(pyramid)
+        
         mountImageLayer(img, width, height)
-        setMapLabel(`${file.name} • ${width}x${height}`)
+        setMapLabel(`${file.name} • ${width}x${height} (Multi-Res)`)
         setImageMeta({ name: file.name, type: file.type })
+        setNotice('Imagem carregada com multi-resolução.')
       }
-      setNotice('Imagem carregada com tiles de alta qualidade.')
       URL.revokeObjectURL(url)
     }
     img.onerror = () => {
       setNotice('Falha ao carregar a imagem.')
       URL.revokeObjectURL(url)
-    }
-
-    if (file.type === 'image/svg+xml' || file.name.toLowerCase().endsWith('.svg')) {
-      const svgText = await file.text()
-      const dims = parseSvgDimensions(svgText)
-      if (dims) {
-        setZoomSettings((prev) => ({ ...prev, maxZoom: Math.max(prev.maxZoom, 10) }))
-        img.onload = () => {
-          mountImageLayer(img, dims.width, dims.height)
-          setMapLabel(`${file.name} • ${dims.width}x${dims.height}`)
-          setNotice('SVG carregado com alta definição.')
-          setImageMeta({ name: file.name, type: file.type, svgText })
-          URL.revokeObjectURL(url)
-        }
-      }
     }
 
     img.src = url
@@ -160,35 +199,49 @@ function App() {
     if (!file) return
     const url = URL.createObjectURL(file)
     const img = new Image()
-    img.onload = () => {
+    
+    const isSvg = file.type === 'image/svg+xml' || file.name.toLowerCase().endsWith('.svg')
+    let svgText: string | undefined
+
+    if (isSvg) {
+      svgText = await file.text()
+      const dims = parseSvgDimensions(svgText)
+      if (dims) {
+        setZoomSettings((prev) => ({ ...prev, maxZoom: Math.max(prev.maxZoom, 12) }))
+        
+        img.onload = async () => {
+          const pyramid = await generateSvgPyramid(svgText!, dims.width, dims.height, [1, 2, 4, 8])
+          setResolutionPyramid(pyramid)
+          
+          mountImageLayer(img, dims.width, dims.height)
+          setMapLabel(`${file.name} • ${dims.width}x${dims.height} (Multi-Res)`)
+          setNotice('SVG carregado com multi-resolução.')
+          setImageMeta({ name: file.name, type: file.type, svgText })
+          URL.revokeObjectURL(url)
+        }
+        
+        img.src = url
+        return
+      }
+    }
+
+    img.onload = async () => {
       const width = img.naturalWidth || img.width
       const height = img.naturalHeight || img.height
       if (width && height) {
+        const pyramid = await generateRasterPyramid(img, [1, 2, 4])
+        setResolutionPyramid(pyramid)
+        
         mountImageLayer(img, width, height)
-        setMapLabel(`${file.name} • ${width}x${height}`)
+        setMapLabel(`${file.name} • ${width}x${height} (Multi-Res)`)
         setImageMeta({ name: file.name, type: file.type })
+        setNotice('Imagem fixa carregada com multi-resolução.')
       }
-      setNotice('Imagem fixa carregada.')
       URL.revokeObjectURL(url)
     }
     img.onerror = () => {
       setNotice('Falha ao carregar a imagem fixa.')
       URL.revokeObjectURL(url)
-    }
-
-    if (file.type === 'image/svg+xml' || file.name.toLowerCase().endsWith('.svg')) {
-      const svgText = await file.text()
-      const dims = parseSvgDimensions(svgText)
-      if (dims) {
-        setZoomSettings((prev) => ({ ...prev, maxZoom: Math.max(prev.maxZoom, 10) }))
-        img.onload = () => {
-          mountImageLayer(img, dims.width, dims.height)
-          setMapLabel(`${file.name} • ${dims.width}x${dims.height}`)
-          setNotice('SVG carregado com alta definição.')
-          setImageMeta({ name: file.name, type: file.type, svgText })
-          URL.revokeObjectURL(url)
-        }
-      }
     }
 
     img.src = url
@@ -205,13 +258,27 @@ function App() {
       }
 
       const img = new Image()
-      img.onload = () => {
-        mountImageLayer(img, data.image.width, data.image.height)
-        setMapLabel(`${data.image.name} • ${data.image.width}x${data.image.height}`)
+      img.onload = async () => {
         setZoomSettings(data.zoom)
         setQuality(data.quality)
+        if (data.renderingMode) {
+          setRenderingMode(data.renderingMode)
+        }
+        
         const svgText = extractSvgTextFromDataUrl(data.image.dataUrl)
         setImageMeta({ name: data.image.name, type: data.image.type, svgText: svgText ?? undefined })
+        
+        // Regenerate resolution pyramid
+        if (svgText) {
+          const pyramid = await generateSvgPyramid(svgText, data.image.width, data.image.height, [1, 2, 4, 8])
+          setResolutionPyramid(pyramid)
+        } else {
+          const pyramid = await generateRasterPyramid(img, [1, 2, 4])
+          setResolutionPyramid(pyramid)
+        }
+        
+        mountImageLayer(img, data.image.width, data.image.height)
+        setMapLabel(`${data.image.name} • ${data.image.width}x${data.image.height}`)
         setNotice('Projeto carregado.')
       }
       img.onerror = () => setNotice('Falha ao carregar a imagem do projeto.')
@@ -234,11 +301,25 @@ function App() {
         return
       }
       const img = new Image()
-      img.onload = () => {
+      img.onload = async () => {
         setZoomSettings(data.zoom)
         setQuality(data.quality)
+        if (data.renderingMode) {
+          setRenderingMode(data.renderingMode)
+        }
+        
         const svgText = extractSvgTextFromDataUrl(data.image.dataUrl)
         setImageMeta({ name: data.image.name, type: data.image.type, svgText: svgText ?? undefined })
+        
+        // Regenerate resolution pyramid
+        if (svgText) {
+          const pyramid = await generateSvgPyramid(svgText, data.image.width, data.image.height, [1, 2, 4, 8])
+          setResolutionPyramid(pyramid)
+        } else {
+          const pyramid = await generateRasterPyramid(img, [1, 2, 4])
+          setResolutionPyramid(pyramid)
+        }
+        
         mountImageLayer(img, data.image.width, data.image.height)
         setMapLabel(`${data.image.name} • ${data.image.width}x${data.image.height}`)
         setNotice('Projeto carregado do armazenamento local.')
@@ -344,6 +425,7 @@ function App() {
         maxZoom: zoomSettings.maxZoom,
       },
       quality,
+      renderingMode,
     }
 
     localStorage.setItem(cacheKeys.project, JSON.stringify(payload))
@@ -421,6 +503,7 @@ function App() {
           notice={notice}
           zoomSettings={zoomSettings}
           quality={quality}
+          renderingMode={renderingMode}
           onImageFile={(file) => void handleImageFile(file)}
           onFixedImageFile={(file) => void handleFixedImageFile(file)}
           onProjectFile={(file) => void handleProjectFile(file)}
@@ -434,6 +517,7 @@ function App() {
           onLoadFixedLocal={loadFixedImageFromCache}
           onZoomChange={setZoomSettings}
           onQualityChange={setQuality}
+          onRenderingModeChange={setRenderingMode}
         />
       </div>
     </div>
