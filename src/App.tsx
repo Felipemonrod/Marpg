@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
+import L from 'leaflet'
 import './App.css'
 import MenuBar from './components/MenuBar'
 import Sidebar from './components/Sidebar'
@@ -6,6 +7,8 @@ import type { ImageMeta, ProjectFile, Quality, ZoomSettings, RenderingMode } fro
 import { extractSvgTextFromDataUrl, parseSvgDimensions } from './utils/svg'
 import { buildProjectDataUrl } from './utils/projectDataUrl'
 import { generateSvgPyramid, generateRasterPyramid, type ResolutionPyramid } from './utils/multiResolutionImage'
+import { useLayerManager } from './hooks/useLayerManager'
+import FogOfWarLayer from './map/FogOfWarLayer'
 import useLeafletMap from './hooks/useLeafletMap'
 import useImageLayer from './hooks/useImageLayer'
 
@@ -19,8 +22,9 @@ function App() {
   const [quality, setQuality] = useState<Quality>('high')
   const [renderingMode, setRenderingMode] = useState<RenderingMode>('auto')
   const [imageMeta, setImageMeta] = useState<ImageMeta | null>(null)
-  const [sidebarOpen, setSidebarOpen] = useState<boolean>(true)
   const [resolutionPyramid, setResolutionPyramid] = useState<ResolutionPyramid | undefined>(undefined)
+  const [fogDrawMode, setFogDrawMode] = useState<boolean>(false)
+  const [fogLayerRef, setFogLayerRef] = useState<FogOfWarLayer | null>(null)
 
   const { mapDivRef, mapRef } = useLeafletMap({ minZoom: -5 })
   const { imageRef, mountImageLayer, clearImageLayer: clearMapImage } = useImageLayer({
@@ -31,6 +35,9 @@ function App() {
     svgText: imageMeta?.svgText,
     resolutionPyramid,
   })
+
+  // Layer management system
+  const layerManager = useLayerManager()
 
   const cacheKeys = {
     project: 'rpg_map_project_v1',
@@ -120,6 +127,92 @@ function App() {
       if (timer) window.clearTimeout(timer)
     }
   }, [])
+
+  // Manage Fog of War layer
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !imageRef.current) return
+
+    if (layerManager.fogOfWar.enabled) {
+      // Add or update fog layer
+      if (!fogLayerRef) {
+        const fogLayer = new FogOfWarLayer(
+          layerManager.fogOfWar,
+          imageRef.current.width,
+          imageRef.current.height
+        )
+        fogLayer.addTo(map)
+        setFogLayerRef(fogLayer)
+      } else {
+        fogLayerRef.updateState(layerManager.fogOfWar)
+      }
+    } else {
+      // Remove fog layer
+      if (fogLayerRef) {
+        fogLayerRef.remove()
+        setFogLayerRef(null)
+      }
+    }
+  }, [layerManager.fogOfWar, mapRef, imageRef, fogLayerRef])
+
+  // Handle fog drawing mode integration with Geoman
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map) return
+
+    if (fogDrawMode && layerManager.fogOfWar.enabled) {
+      // Listen to Geoman events to capture revealed areas
+      const handleCreated = (e: any) => {
+        const layer = e.layer
+        if (!layer) return
+
+        // Extract coordinates based on shape type
+        if (layer instanceof L.Circle) {
+          const center = layer.getLatLng()
+          const radius = layer.getRadius()
+          layerManager.revealFogArea({
+            id: `fog-${Date.now()}`,
+            shape: 'circle',
+            coordinates: [[center.lat, center.lng]],
+            radius,
+          })
+          // Remove the drawing layer as it's now part of fog
+          map.removeLayer(layer)
+        } else if (layer instanceof L.Rectangle) {
+          const bounds = layer.getBounds()
+          layerManager.revealFogArea({
+            id: `fog-${Date.now()}`,
+            shape: 'rectangle',
+            coordinates: [
+              [bounds.getNorth(), bounds.getWest()],
+              [bounds.getSouth(), bounds.getEast()],
+            ],
+          })
+          map.removeLayer(layer)
+        } else if (layer instanceof L.Polygon) {
+          const latlngs = layer.getLatLngs()[0] as L.LatLng[]
+          layerManager.revealFogArea({
+            id: `fog-${Date.now()}`,
+            shape: 'polygon',
+            coordinates: latlngs.map(ll => [ll.lat, ll.lng]),
+          })
+          map.removeLayer(layer)
+        }
+      }
+
+      map.on('pm:create', handleCreated)
+
+      return () => {
+        map.off('pm:create', handleCreated)
+      }
+    }
+  }, [fogDrawMode, layerManager, mapRef])
+
+  useEffect(() => {
+    if (!imageRef.current) return
+    mountImageLayer(imageRef.current.image, imageRef.current.width, imageRef.current.height)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [zoomSettings, quality, renderingMode, imageMeta?.svgText, resolutionPyramid])
 
   const clearImageLayer = () => {
     clearMapImage()
@@ -480,25 +573,47 @@ function App() {
     }
   }
 
+  // Layer management callbacks
+  const handleAddLayer = useCallback(() => {
+    const name = prompt('Nome da nova camada:', `Camada ${layerManager.layers.length + 1}`)
+    if (name) {
+      layerManager.addLayer(name, 'drawing')
+      setNotice(`Camada "${name}" criada.`)
+    }
+  }, [layerManager])
+
+  const handleReorderLayer = useCallback((id: string, direction: 'up' | 'down') => {
+    const layer = layerManager.layers.find(l => l.id === id)
+    if (!layer) return
+
+    const sortedLayers = [...layerManager.layers].sort((a, b) => a.zIndex - b.zIndex)
+    const currentIndex = sortedLayers.findIndex(l => l.id === id)
+
+    if (direction === 'up' && currentIndex > 0) {
+      const newZIndex = sortedLayers[currentIndex - 1].zIndex
+      layerManager.reorderLayer(id, newZIndex - 0.5)
+    } else if (direction === 'down' && currentIndex < sortedLayers.length - 1) {
+      const newZIndex = sortedLayers[currentIndex + 1].zIndex
+      layerManager.reorderLayer(id, newZIndex + 0.5)
+    }
+
+    // Normalize z-indexes
+    const normalized = [...layerManager.layers].sort((a, b) => a.zIndex - b.zIndex)
+    normalized.forEach((layer, index) => {
+      layerManager.updateLayer(layer.id, { zIndex: index + 1 })
+    })
+  }, [layerManager])
+
   return (
     <div className="app">
       <MenuBar />
-      <div className={`main ${sidebarOpen ? 'sidebarOpen' : 'sidebarClosed'}`}>
+      <div className="main">
         <div className="mapArea">
           <div ref={mapDivRef} className="map" />
         </div>
 
-        <button
-          className="panelHandle"
-          type="button"
-          onClick={() => setSidebarOpen((v) => !v)}
-          aria-label={sidebarOpen ? 'Fechar painel' : 'Abrir painel'}
-          title={sidebarOpen ? 'Fechar painel' : 'Abrir painel'}
-        >
-          {sidebarOpen ? '>' : '<'}
-        </button>
-
         <Sidebar
+          // General
           mapLabel={mapLabel}
           notice={notice}
           zoomSettings={zoomSettings}
@@ -518,6 +633,33 @@ function App() {
           onZoomChange={setZoomSettings}
           onQualityChange={setQuality}
           onRenderingModeChange={setRenderingMode}
+
+          // Layers
+          layers={layerManager.layers}
+          activeLayerId={layerManager.activeLayerId}
+          onAddLayer={handleAddLayer}
+          onRemoveLayer={layerManager.removeLayer}
+          onToggleVisibility={(id) => {
+            const layer = layerManager.layers.find(l => l.id === id)
+            if (layer) layerManager.updateLayer(id, { visible: !layer.visible })
+          }}
+          onToggleLock={(id) => {
+            const layer = layerManager.layers.find(l => l.id === id)
+            if (layer) layerManager.updateLayer(id, { locked: !layer.locked })
+          }}
+          onSetActive={layerManager.setActiveLayer}
+          onUpdateLayerOpacity={(id, opacity) => layerManager.updateLayer(id, { opacity })}
+          onRenameLayer={(id, name) => layerManager.updateLayer(id, { name })}
+          onReorderLayer={handleReorderLayer}
+
+          // Fog
+          fogState={layerManager.fogOfWar}
+          onToggleFog={layerManager.toggleFog}
+          onUpdateFogOpacity={(opacity) => layerManager.updateFog({ opacity })}
+          onUpdateFogColor={(color) => layerManager.updateFog({ color })}
+          onClearFog={layerManager.clearAllFog}
+          isDrawingMode={fogDrawMode}
+          onToggleDrawMode={() => setFogDrawMode(v => !v)}
         />
       </div>
     </div>

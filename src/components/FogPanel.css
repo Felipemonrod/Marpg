@@ -1,0 +1,167 @@
+.fogPanel {
+  background: #2a2a2a;
+  border-radius: 8px;
+  padding: 12px;
+  color: #e0e0e0;
+}
+
+.fogPanelHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #444;
+}
+
+.fogPanelHeader h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.fogControls {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.fogControl {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.fogControl label {
+  font-size: 13px;
+  color: #ccc;
+  font-weight: 500;
+}
+
+.fogControlRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.fogControlRow input[type="range"] {
+  flex: 1;
+  height: 4px;
+  background: #444;
+  border-radius: 2px;
+  outline: none;
+  -webkit-appearance: none;
+}
+
+.fogControlRow input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  background: #4a7c59;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.fogControlRow input[type="range"]::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  background: #4a7c59;
+  border-radius: 50%;
+  cursor: pointer;
+  border: none;
+}
+
+.fogControlRow input[type="color"] {
+  width: 50px;
+  height: 32px;
+  border: 1px solid #555;
+  border-radius: 4px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.fogControlRow span {
+  min-width: 45px;
+  text-align: right;
+  color: #aaa;
+  font-size: 12px;
+}
+
+.fogActions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.fogActions .btn {
+  padding: 8px 12px;
+  border-radius: 4px;
+  border: 1px solid #555;
+  background: #3a3a3a;
+  color: #e0e0e0;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-size: 14px;
+}
+
+.fogActions .btn:hover:not(:disabled) {
+  background: #4a4a4a;
+  border-color: #666;
+}
+
+.fogActions .btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.fogActions .btnActive {
+  background: #4a7c59;
+  border-color: #5a8c69;
+}
+
+.fogActions .btnDanger {
+  background: #4a2828;
+  border-color: #6a3838;
+  color: #ff8888;
+}
+
+.fogActions .btnDanger:hover:not(:disabled) {
+  background: #5a3838;
+  border-color: #8a4848;
+}
+
+.fogHelp {
+  background: #252525;
+  border-radius: 4px;
+  padding: 10px;
+  border-left: 3px solid #4a7c59;
+}
+
+.fogHelp small {
+  display: block;
+  color: #aaa;
+  line-height: 1.6;
+}
+
+.fogHelp strong {
+  color: #e0e0e0;
+}
+
+.fogDisabled {
+  text-align: center;
+  padding: 20px;
+  color: #888;
+}
+
+.fogDisabled p {
+  margin: 0 0 8px 0;
+  font-size: 14px;
+}
+
+.fogDisabled small {
+  font-size: 12px;
+  color: #666;
+}

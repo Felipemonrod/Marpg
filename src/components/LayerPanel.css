@@ -1,0 +1,177 @@
+.layerPanel {
+  background: #2a2a2a;
+  border-radius: 8px;
+  padding: 12px;
+  color: #e0e0e0;
+  max-height: 500px;
+  display: flex;
+  flex-direction: column;
+}
+
+.layerPanelHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #444;
+}
+
+.layerPanelHeader h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.btnSmall {
+  padding: 4px 12px;
+  font-size: 13px;
+  border-radius: 4px;
+  border: 1px solid #555;
+  background: #3a3a3a;
+  color: #e0e0e0;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btnSmall:hover {
+  background: #4a4a4a;
+  border-color: #666;
+}
+
+.btnActive {
+  background: #4a7c59;
+  border-color: #5a8c69;
+}
+
+.layerList {
+  flex: 1;
+  overflow-y: auto;
+  margin-bottom: 8px;
+}
+
+.layerItem {
+  background: #333;
+  border: 2px solid transparent;
+  border-radius: 6px;
+  padding: 10px;
+  margin-bottom: 8px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.layerItem:hover {
+  background: #3a3a3a;
+  border-color: #555;
+}
+
+.layerItem.active {
+  border-color: #4a7c59;
+  background: #2d3d33;
+}
+
+.layerControls {
+  display: flex;
+  gap: 4px;
+}
+
+.layerBtn {
+  background: #2a2a2a;
+  border: 1px solid #444;
+  border-radius: 4px;
+  padding: 4px 8px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.2s;
+}
+
+.layerBtn:hover:not(:disabled) {
+  background: #3a3a3a;
+  border-color: #555;
+}
+
+.layerBtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.layerBtnDelete {
+  color: #ff6b6b;
+}
+
+.layerBtnDelete:hover {
+  background: #4a2828;
+  border-color: #ff6b6b;
+}
+
+.layerInfo {
+  flex: 1;
+  min-width: 0;
+}
+
+.layerName {
+  font-weight: 500;
+  margin-bottom: 4px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.layerType {
+  font-size: 11px;
+  padding: 2px 6px;
+  background: #444;
+  border-radius: 3px;
+  color: #aaa;
+}
+
+.layerNameInput {
+  background: #2a2a2a;
+  border: 1px solid #4a7c59;
+  border-radius: 4px;
+  padding: 4px 8px;
+  color: #e0e0e0;
+  font-size: 14px;
+  width: 100%;
+}
+
+.layerOpacity {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.layerOpacity label {
+  color: #aaa;
+  min-width: 70px;
+}
+
+.layerOpacity input[type="range"] {
+  flex: 1;
+  height: 4px;
+}
+
+.layerOpacity span {
+  min-width: 35px;
+  text-align: right;
+  color: #ccc;
+}
+
+.layerActions {
+  display: flex;
+  gap: 4px;
+  flex-direction: column;
+}
+
+.layerInfo small {
+  display: block;
+  color: #888;
+  padding: 8px;
+  background: #2a2a2a;
+  border-radius: 4px;
+  line-height: 1.5;
+}

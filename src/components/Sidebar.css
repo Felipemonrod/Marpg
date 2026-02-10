@@ -1,0 +1,247 @@
+.sidebar {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 320px;
+  /* Removed height: 100% to rely on top/bottom */
+  background: #1e1e1e;
+  border-left: 1px solid #333;
+  display: flex;
+  flex-direction: column;
+  color: #e0e0e0;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  box-shadow: -4px 0 20px rgba(0, 0, 0, 0.3);
+  z-index: 1000;
+  transition: transform 0.3s ease;
+  box-sizing: border-box; /* Fix for overflow */
+}
+
+/* Fix global box sizing for sidebar content */
+.sidebar * {
+  box-sizing: border-box;
+}
+
+.sidebar.closed {
+  transform: translateX(100%);
+}
+
+/* Toggle Sidebar Button (External) */
+.sidebar-toggle-btn {
+  position: absolute;
+  top: 20px;
+  right: 20px; /* Default position when CLOSED (or acts as base) */
+  z-index: 1001;
+  width: 32px;
+  height: 32px;
+  border-radius: 4px;
+  border: 1px solid #444;
+  background: #333;
+  color: #fff;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  font-size: 14px;
+  padding: 0;
+  transition: right 0.3s ease, background 0.2s;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+}
+
+.sidebar-toggle-btn:hover {
+  background: #404040;
+}
+
+.sidebar-toggle-btn.open {
+  right: 340px; /* 320px sidebar + 20px gap */
+}
+
+.sidebar-toggle-btn.closed {
+  right: 20px;
+}
+
+/* Tab Navigation */
+.sidebar-tabs {
+  display: flex;
+  background: #252526;
+  border-bottom: 1px solid #333;
+}
+
+.sidebar-tab {
+  flex: 1;
+  padding: 12px 0;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: #888;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  font-size: 18px;
+}
+
+.sidebar-tab:hover {
+  background: #2d2d2d;
+  color: #bbb;
+}
+
+.sidebar-tab.active {
+  color: #4daafc;
+  border-bottom-color: #4daafc;
+  background: #2d2d2d;
+}
+
+/* Content Area */
+.sidebar-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  scrollbar-width: thin;
+  scrollbar-color: #444 #1e1e1e;
+}
+
+.sidebar-content::-webkit-scrollbar {
+  width: 8px;
+}
+
+.sidebar-content::-webkit-scrollbar-track {
+  background: #1e1e1e;
+}
+
+.sidebar-content::-webkit-scrollbar-thumb {
+  background: #444;
+  border-radius: 4px;
+}
+
+/* Common Section Styles */
+.panel-section {
+  margin-bottom: 24px;
+  background: #252526;
+  border-radius: 8px;
+  padding: 12px;
+  border: 1px solid #333;
+}
+
+.panel-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #ccc;
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 1px solid #333;
+  padding-bottom: 8px;
+}
+
+/* Form Elements */
+.sidebar-btn {
+  width: 100%;
+  padding: 10px 12px;
+  background: #333;
+  border: 1px solid #444;
+  border-radius: 6px;
+  color: #eee;
+  cursor: pointer;
+  font-size: 13px;
+  margin-bottom: 8px;
+  transition: background 0.2s;
+  text-align: left;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sidebar-btn:hover {
+  background: #404040;
+  border-color: #555;
+}
+
+.sidebar-btn:active {
+  background: #2a2a2a;
+}
+
+.sidebar-btn.primary {
+  background: #0e639c;
+  border-color: #1177bb;
+}
+
+.sidebar-btn.primary:hover {
+  background: #1177bb;
+}
+
+.sidebar-input-group {
+  margin-bottom: 12px;
+}
+
+.sidebar-label {
+  display: block;
+  font-size: 12px;
+  color: #aaa;
+  margin-bottom: 6px;
+}
+
+.sidebar-file-upload {
+  position: relative;
+  overflow: hidden;
+}
+
+.sidebar-file-upload input[type="file"] {
+  position: absolute;
+  left: 0;
+  top: 0;
+  opacity: 0;
+  width: 100%;
+  height: 100%;
+  cursor: pointer;
+}
+
+/* Range Sliders */
+input[type="range"] {
+  width: 100%;
+  height: 4px;
+  background: #444;
+  border-radius: 2px;
+  -webkit-appearance: none;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  background: #4daafc;
+  border-radius: 50%;
+  cursor: pointer;
+  margin-top: -6px;
+}
+
+input[type="range"]::-webkit-slider-runnable-track {
+  width: 100%;
+  height: 4px;
+  background: #444;
+  border-radius: 2px;
+}
+
+/* Header Info */
+.project-info {
+  background: #2d2d2d;
+  padding: 12px;
+  border-radius: 8px;
+  margin-bottom: 16px;
+  border-left: 3px solid #4daafc;
+}
+
+.project-name {
+  font-weight: 600;
+  color: #fff;
+  font-size: 14px;
+  margin-bottom: 4px;
+}
+
+.project-details {
+  font-size: 11px;
+  color: #888;
+}
